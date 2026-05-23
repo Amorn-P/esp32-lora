@@ -538,4 +538,3 @@ void sendHeartbeat() {
 }
 
 #endif // BOARD_TYPE != 0
-// SYNC TEST: Sun May 24 00:14:51 +07 2026
