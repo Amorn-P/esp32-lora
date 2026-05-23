@@ -1,0 +1,76 @@
+# Blynk_tab.txt - ESP32_Lora Project
+# Dashboard < 100 | Configuration > 100
+
+## TAB: DASHBOARD
+V1   : [Value Display] System Status (Current Activity Label)
+V11  : [Value Display] Time Remaining (P1, P2, or Manual)
+V12  : [Progress Bar] Session Progress (0-100%)
+V19  : [Button] SYNC ALL SLAVES (Broadcast schedules)
+V20  : [Label] Network Status (Slave Connectivity Health)
+V21  : [Terminal] Slave Relays Status
+
+### Visual Status Indicators (LEDs)
+V60 : [LED] Master AA
+V61 : [LED] B1 Pump
+V62 : [LED] B2 Pump
+V63 : [LED] B3 Main Pump
+V66 : [LED] B4-R1
+V67 : [LED] B4-R2
+V68 : [LED] B4-R3
+V69 : [LED] B4-R4
+V70 : [LED] B5-R1
+V71 : [LED] B5-R2
+V72 : [LED] B5-R3
+V73 : [LED] B5-R4
+V74 : [LED] B5-R5
+V75 : [LED] B5-R6
+V76 : [LED] B6-R1
+V77 : [LED] B6-R2
+V78 : [LED] B6-R3
+V79 : [LED] B6-R4
+V81 : [LED] B7-R1
+V82 : [LED] B7-R2
+V83 : [LED] B7-R3
+V84 : [LED] B7-R4
+V85 : [LED] B7-R5
+V86 : [LED] B7-R6
+
+### LoRa Connection Status (Online LEDs)
+V150: [LED] B1 LoRa Online
+V151: [LED] B2 LoRa Online
+V152: [LED] B3 LoRa Online
+V153: [LED] B4 LoRa Online
+V154: [LED] B5 LoRa Online
+V155: [LED] B6 LoRa Online
+V156: [LED] B7 LoRa Online
+
+## TAB: CONFIGURATION
+### Group: B3-B7 (Main System)
+V130 : [Time Input] B3-B7 P1 Start Time
+V131 : [Numeric Input] B3-B7 P1 Duration (Minutes per Valve)
+V132 : [Time Input] B3-B7 P2 Start Time
+V133 : [Numeric Input] B3-B7 P2 Duration (Minutes per Valve)
+
+### Manual & Emergency
+V134 : [Numeric Input] Manual Relay ID (1-20: B4-B7)
+V135 : [Numeric Input] Manual Duration (Minutes)
+V136 : [Button] Manual START
+V137 : [Button] STOP ALL (Emergency Shutdown)
+
+### Group: B1 (Independent Pump) — Future
+V140 : [Time Input] B1 P1 Start Time
+V141 : [Numeric Input] B1 P1 Duration
+V142 : [Time Input] B1 P2 Start Time
+V143 : [Numeric Input] B1 P2 Duration
+
+### Group: B2 (Independent Pump) — Future
+V144 : [Time Input] B2 P1 Start Time
+V145 : [Numeric Input] B2 P1 Duration
+V146 : [Time Input] B2 P2 Start Time
+V147 : [Numeric Input] B2 P2 Duration
+
+## RESERVED PINS (CommCore)
+V90-V100  : WiFi / IP Configuration
+V101      : Apply & Restart
+V118-V120 : Telegram Config + Mode Toggle
+V123-V127 : OTA / Reset Time
