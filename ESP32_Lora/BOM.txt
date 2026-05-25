@@ -1,0 +1,62 @@
+SS34 (3A/40V SMD) or 1N5822 (3A/40V axial)
+ - TVS P6KE18A or SMAJ18A across solar input (clamps surges above ~20V to ground)
+ - 2A PTC resettable fuse in series on solar(+) line — this gives you actual overcurrent + short-circuit protection
+INA226 VCC from ESP32 3.3V pin (not 5V)
+ Add:
+    - 2A PTC resettable fuse (e.g., RXEF020) on solar(+) input
+    - Optional: 1A PTC on 5V output rail	
+	2200u 50V
+	470u 16V
+	LM2596 Thermal — Needs Heatsink
+	 100nF MLCC across C2 | HF decoupling
+	 SMAJ5.0A TVS on 5V rail | ESP32 protection from LM2596 failure
+
+Revised Wiring
+
+
+    Solar(+) ──[2A PTC]──[SS34]── INA226 Vin(+) ── INA226 Vin(-) ── LM2596 Vin(+)
+                                                           │
+    Solar(-) ──┬────────────────────────────────────────────┤
+               │                                       C1 2200µF 50V
+               │                                       TVS P6KE18A
+               │                                            │
+               └── ESP32 GND ──── LM2596 Vin(-) ────────────┘
+
+    LM2596 Vout(+) ──┬── UPS Vin(+) ──[UPS pass-through]── ESP32 VCC
+                      │                                    │
+                      │                               C2 470µF 16V
+                      │                               100nF MLCC
+                      │                               SMAJ5.0A TVS
+                      │                                    │
+    LM2596 Vout(-) ──┴── UPS GND ───────────────────── ESP32 GND
+
+    INA226 VCC ← ESP32 3.3V pin
+    INA226 SDA ← ESP32 GPIO21 (3.3V I2C safe)
+    INA226 SCL ← ESP32 GPIO22
+
+
+    All grounds common at a single star point near LM2596.	 
+	
+	    SENSOR BUS (new):
+
+    INA226: VCC→3.3V, SDA→GPIO21, SCL→GPIO22
+    DS18B20: VDD→3.3V, DQ→GPIO4 (4.7kΩ pull-up to 3.3V), GND→GND
+
+
+    FAN CIRCUIT (new — 3 components):
+
+    5V rail → FAN(+) → [Fan] → FAN(-) → AO3400 DRAIN
+                                       AO3400 SOURCE → GND
+    GPIO16 → [100Ω] → AO3400 GATE
+                       [10kΩ] → GND (pulldown)
+    1N5819: cathode→5V, anode→AO3400 DRAIN (flyback)
+
+
+    Fan Logic (software):
+
+    IF Vbus ≥ 12.0V AND DS18B20 ≥ 40°C → GPIO16 HIGH → fan ON
+    IF Vbus < 12.0V                    → GPIO16 LOW  → fan OFF (don't touch battery)
+	
+
+	
+	

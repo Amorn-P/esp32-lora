@@ -22,5 +22,8 @@
     B4 serial:      [LoRa] Schedule: R1 09:00/15min, R2 14:00/15min
     B5 serial:      [LoRa] Schedule: R1 09:00/15min, R2 14:00/15min
 
-
-    Got the AA board ready for step 2?
+Update memory before shutdown
+ C:\Users\SKY> wsl
+    $ cd /mnt/c/Users/SKY/Documents/PlatformIO/Projects/Project_Preperation/scripts && bash sync-push.sh
+    Or one-liner from CMD without entering WSL:
+    wsl bash -c "cd /mnt/c/Users/SKY/Documents/PlatformIO/Projects/Project_Preperation/scripts && bash sync-push.sh"
