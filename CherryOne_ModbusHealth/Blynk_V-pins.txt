@@ -1,0 +1,86 @@
+================================================================================
+CherryOne - BLYNK VIRTUAL PIN SUMMARY v1.2.0
+================================================================================
+Server: 43.229.135.169:8080 (Legacy) | No SSL
+
+---- CONTROL PINS ----
+V0    Button    EMERGENCY STOP (clears all modes, turns off all relays)
+V2    Input     Period 1 Start Hour (0-23)
+V3    Input     Period 1 Start Minute (0-59)
+V5    Input     Period 1 Duration per SV (minutes, 1-1440)
+V6    Input     Period 2 Duration per SV (minutes, 1-1440)
+V10   Button    Sync NTP Time -> RTC Module
+V12   Input     Period 2 Start Hour (0-23)
+V13   Input     Period 2 Start Minute (0-59)
+V15   Switch    Time Source: 0=RTC Module, 1=NTP Server
+V105  Input     Manual Relay ID Select (2-21)
+V106  Input     Manual Duration (minutes)
+V107  Button    Manual START / SWITCH relay
+
+---- STATUS PINS ----
+V1    Gauge     Progress Bar (0-100%)
+V4    Label     System Status (Idle / Running / Finished / STOPPING)
+V7    Label     Period 1 Total Time Display
+V8    Label     Period 2 Total Time Display
+V16   Label     Time Source Status (RTC / NTP)
+V21   Label     RTC Sync Time Display
+V24   Label     Time Remaining (minutes)
+V31   Label     Notification / Log Messages
+V102  Label     Current IP Address
+V121  Label     WiFi Mode Status (AP Mode / Fast Mode)
+V122  Label     OTA Update Status / Progress
+
+---- LED INDICATORS (SV1-SV21) ----
+V61   LED       Solenoid Valve 1  (Pump)
+V62   LED       Solenoid Valve 2
+V63   LED       Solenoid Valve 3
+V64   LED       Solenoid Valve 4
+V65   LED       Solenoid Valve 5
+V66   LED       Solenoid Valve 6
+V67   LED       Solenoid Valve 7
+V68   LED       Solenoid Valve 8
+V69   LED       Solenoid Valve 9
+V70   LED       Solenoid Valve 10
+V71   LED       Solenoid Valve 11
+V72   LED       Solenoid Valve 12
+V73   LED       Solenoid Valve 13
+V74   LED       Solenoid Valve 14
+V75   LED       Solenoid Valve 15
+V76   LED       Solenoid Valve 16
+V77   LED       Solenoid Valve 17
+V78   LED       Solenoid Valve 18
+V79   LED       Solenoid Valve 19
+V80   LED       Solenoid Valve 20
+V81   LED       Solenoid Valve 21
+
+---- WEB CONFIG PINS (via Blynk) ----
+V90   Input     WiFi SSID
+V91   Input     WiFi Password
+V92   Switch    Static IP Enable/Disable
+V93   Input     Static IP Address
+V94   Input     Gateway
+V95   Input     Subnet Mask
+V96   Input     Primary DNS
+V97   Input     Secondary DNS
+V98   Switch    Blynk Mode Enable/Disable
+V99   Input     Blynk Token
+V100  Input     Blynk Server Address
+V101  Button    Apply Settings & Restart
+
+---- TELEGRAM CONFIG PINS ----
+V118  Input     Telegram Bot Token
+V119  Input     Telegram Bot Group ID
+
+---- OTA UPDATE PINS ----
+V123  Input     Firmware URL (text)
+V124  Button    Start OTA Update
+V125  Button    Reboot ESP32
+V126  Input     Daily Reset Hour (0-23, -1 or 99 = disabled)
+V127  Input     Daily Reset Minute (0-59, -1 or 99 = disabled)
+
+---- INTERNAL PINS (used by code, not on UI) ----
+V120  Button    AP/Fast Mode Toggle (deprecated, use Web Portal)
+================================================================================
+Total: 47 virtual pins in use
+Range: V0-V127 (7-bit addressing, Blynk Legacy limit = 128 pins)
+================================================================================

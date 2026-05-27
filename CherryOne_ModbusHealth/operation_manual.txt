@@ -1,0 +1,133 @@
+================================================================================
+CherryOne SYSTEM OPERATION MANUAL v1.2.0
+================================================================================
+
+1. FIRST-TIME SETUP (WiFi Configuration)
+--------------------------------------------------------------------------------
+1. Power on ESP32. It creates AP: "CherryOne"
+2. Connect phone/PC to WiFi: CherryOne / Password: 11111111
+3. Open browser: 192.168.4.1
+4. Click [Settings] button -> fill in:
+   - WiFi SSID: Your network name
+   - WiFi Password: Your network password
+   - UNCHECK "Mode Static IP" (use DHCP unless you need fixed IP)
+   - Blynk Token: From Blynk App
+   - Blynk Server: 43.229.135.169
+   - Leave Blynk checkbox ON
+5. Click [Apply] to save. ESP32 will reboot and connect.
+6. To set Telegram: click [Set Parameters] on home page.
+
+LED Indicators:
+  GPIO 25 (Status): ON = Fast Mode / OFF during AP Config
+  GPIO 26 (Internet): ON = Internet connected
+
+2. BLYNK APP SETUP (Blynk Legacy 2.27.34)
+--------------------------------------------------------------------------------
+Server: 43.229.135.169  Port: 8080
+
+TAB 1: CONTROL
+  [V2]   Period 1 Start Hour (0-23)
+  [V3]   Period 1 Start Minute (0-59)
+  [V5]   Period 1 Duration per SV (minutes)
+  [V12]  Period 2 Start Hour (0-23)
+  [V13]  Period 2 Start Minute (0-59)
+  [V6]   Period 2 Duration per SV (minutes)
+  [V105] Manual Relay ID Select (2-21)
+  [V106] Manual Duration (minutes)
+  [V107] Manual Start (Push button)
+  [V0]   EMERGENCY STOP (Push button)
+  [V10]  Sync Time: NTP -> RTC (Push button)
+
+TAB 2: MONITORING
+  [V1]   Progress Bar (0-100%)
+  [V4]   System Status Label
+  [V7]   Period 1 Total Time
+  [V8]   Period 2 Total Time
+  [V15]  Time Source Switch (0=RTC, 1=NTP)
+  [V16]  Time Source Status
+  [V21]  RTC Sync Status
+  [V24]  Time Remaining (min)
+  [V31]  Notification Log
+  [V61-V81] LED indicators for SV1-SV21
+
+TAB 3: SYSTEM & OTA
+  [V102] Current IP Address
+  [V121] WiFi Mode (AP / Fast)
+  [V122] OTA Status Message
+  [V123] OTA Firmware URL (text input)
+  [V124] Start OTA Update (button)
+  [V125] ESP32 Reboot (button)
+  [V126] Auto-Reset Hour (0-23, 99=off)
+  [V127] Auto-Reset Minute (0-59)
+
+WEB CONFIG PINS (V90-V101)
+  [V90]  WiFi SSID
+  [V91]  WiFi Password
+  [V92]  Static IP Enable/Disable
+  [V93]  Static IP Address
+  [V94]  Gateway
+  [V95]  Subnet Mask
+  [V96]  Primary DNS
+  [V97]  Secondary DNS
+  [V98]  Blynk Enable/Disable
+  [V99]  Blynk Token
+  [V100] Blynk Server
+  [V101] Apply & Restart
+
+TELEGRAM PINS
+  [V118] Bot Token
+  [V119] Bot Group ID
+
+3. OPERATING PROCEDURES
+--------------------------------------------------------------------------------
+
+SCHEDULE MODE (Sch1 / Sch2):
+  1. Set start time on V2/V3 (Sch1) or V12/V13 (Sch2)
+  2. Set per-valve duration on V5 (Sch1) or V6 (Sch2)
+  3. System auto-starts at scheduled time
+  4. All 21 valves run in cascade with 1-min overlap
+  5. Pump (SV1) runs during entire cycle
+
+MANUAL MODE (Single Relay):
+  1. Select relay ID on V105 (2-21)
+  2. Set duration on V106 (minutes)
+  3. Press V107 to START
+  4. To SWITCH relay during run: select new ID on V105, press V107
+     -> Old relay OFF, new relay ON, timer continues
+  5. STOP: press V0 or wait for timer to expire
+
+MUTUAL EXCLUSION:
+  - Manual cannot start if Sch1 or Sch2 is running
+  - Sch1/Sch2 cannot trigger if Manual is running
+
+4. TELEGRAM NOTIFICATIONS
+--------------------------------------------------------------------------------
+System sends alerts for:
+  - System startup (WiFi, IP, config info)
+  - Period 1 / Period 2 / Manual START and STOP
+Configure via Web Portal [Set Parameters] or Blynk V118/V119.
+
+5. OTA FIRMWARE UPDATE
+--------------------------------------------------------------------------------
+1. Compile firmware -> get firmware.bin
+2. Upload to direct-link server (GitHub raw, Dropbox ?raw=1, local HTTP)
+3. Paste URL into Blynk V123
+4. Press V124 to start
+5. System auto-stops all relays before update
+6. Monitor progress on V122
+
+6. POWER-LOSS BEHAVIOR
+--------------------------------------------------------------------------------
+- CountP1Min saved to flash every minute
+- On power restore: resumes from last saved minute (< 1 min lost)
+- RS485 Modbus watchdog: if ESP32 dies, relays auto-OFF after 5 seconds
+
+7. TROUBLESHOOTING
+--------------------------------------------------------------------------------
+- No WiFi: Check AP "CherryOne" visible. Reconfigure via 192.168.4.1
+- No Internet: Check DHCP (disable Static IP). Check DNS.
+- No Blynk: Verify server 43.229.135.169:8080, token in User_config.h
+- No Telegram: Verify Bot Token and Group ID via Web Portal
+- Relays not responding: Check RS485 wiring (A/B), slave dipswitch IDs
+- Serial Debug: 115200 baud. Watch for [BOOT], [INET], [FIX], [TASK] prefixes
+================================================================================

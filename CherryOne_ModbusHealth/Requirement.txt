@@ -1,0 +1,68 @@
+Requirement - CherryOne v1.2.0
+ESP32 Master controller for RS485 Modbus RTU 8-channel relay modules
+
+HARDWARE
+  ESP32 38-pin (Master)
+  5x RS485 8-channel Relay Modules (Slaves ID 1-5)
+  DS1302 RTC (CE=15, IO=4, CLK=5)
+  RS485: RXD2=16, TXD2=17
+
+RELAY MAPPING (Board_ID.h + Relay_config.h)
+  Board 0 (ID=1): Relay 0 = Pump (always ON during any mode)
+  Board 1 (ID=2): Relay 0-3 Active, 4-7 Spare
+  Board 2 (ID=3): Relay 0-5 Active, 6-7 Spare
+  Board 3 (ID=4): Relay 0-3 Active, 4-7 Spare
+  Board 4 (ID=5): Relay 0-5 Active, 6-7 Spare
+
+CONNECTIVITY
+  Platform: espressif32@3.5.0 (ESP32 Arduino Core 1.0.6)
+  WiFi Manager: IotWebConf 3.0.4
+    AP Mode: CherryOne / 11111111 @ 192.168.4.1
+    Fallback WiFi: Gilbert_2.4G
+  Blynk Legacy: 43.229.135.169:8080 (NO SSL)
+  Telegram: UniversalTelegramBot 1.3.0
+  NTP: asia.pool.ntp.org (UTC+7)
+  Internet Check: client.connect("www.google.com", 80) via SimpleTimer
+
+OPERATION MODES
+  1. Sch1 (Period 1): Time-triggered cascade, all 21 valves sequential
+  2. Sch2 (Period 2): Time-triggered cascade, all 21 valves sequential
+  3. Manual: Single relay + Pump, switchable during run
+  Mutual Exclusion: Manual <-> Sch1/Sch2 (cannot overlap)
+  Overlap: 1 minute between sequential relays
+
+POWER-LOSS SAFETY
+  RS485 Modbus Watchdog:
+    Startup: writeHoldingRegister(slave, 0x00FE, 5) = 5s timeout
+    Runtime: heartbeat to 0x00FF on all slaves every 2s
+    ESP32 dies -> no heartbeat -> 5s timeout -> all relays OFF
+  EEPROM persistence: CountP1Min saved every minute for resume
+
+EEPROM MEMORY MAP (validated on boot, -1 replaced with defaults)
+  Address 0:   Bot_Token_1 [60]
+  Address 70:  Bot_Group [20]
+  Address 100: BlynkRst_Hr_int
+  Address 110: BlynkRst_Min_int
+  Address 150: Period1_Time_Start_Hr_int
+  Address 160: Period1_Time_Start_Min_int
+  Address 170: Period2_Time_Start_Hr_int
+  Address 180: Period2_Time_Start_Min_int
+  Address 200: Period1_Timeduration_Min_int
+  Address 210: Period2_Timeduration_Min_int
+  Address 220: Manual_Timeduration_Min_int
+  Address 230: Sys_Time_Select (0=RTC, 1=NTP)
+  Address 240: Period1 status
+  Address 250: Period2 status
+  Address 260: Manual status
+  Address 500: currentMode (0=AP, 1=Fast)
+
+STABILITY FEATURES
+  BLYNK_WRITE_SAFE mutex on all cross-core Blynk writes
+  preferencesMutex for Preferences access
+  blynkMutex for Blynk buffer protection
+  Blynk.connect() throttled to every 5s (prevents Core 1 blocking)
+  configSaved() 60s boot guard + 3s EEPROM commit delay
+  Task4 WiFi guard before Blynk operations
+  Hardware WDT 30s + Software WDT 25s proactive feed
+  Fallback WiFi in connectWifi() for config corruption recovery
+  OTA Update via Blynk V123-V124 with safety relay shutdown
