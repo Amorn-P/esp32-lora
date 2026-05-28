@@ -37,3 +37,5 @@ Solar (+) ───→ INA226 Vin+ ══shunt══ Vin- ───→ Step-down
     pio run -e master -t upload --upload-port COMx     → AA
     pio run -e slave  -t upload --upload-port COMx     → B1-B7
 	
+	
+

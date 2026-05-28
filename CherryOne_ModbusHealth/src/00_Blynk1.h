@@ -21,6 +21,10 @@
 
 #include <stdint.h>
 
+// RS485 bus mutex (created in main.cpp, shared with Task3)
+extern SemaphoreHandle_t g_rs485Mutex;
+#define RS485_LOCK_TIMEOUT_MS 500  // Longer timeout for stop operations
+
 extern WidgetLED led_sv1;  extern WidgetLED led_sv2;  extern WidgetLED led_sv3;
 extern WidgetLED led_sv4;  extern WidgetLED led_sv5;  extern WidgetLED led_sv6;
 extern WidgetLED led_sv7;  extern WidgetLED led_sv8;  extern WidgetLED led_sv9;
@@ -65,11 +69,22 @@ static const RelayPoint RELAYS_ALL[] = {
 
 void forceAllRelaysOffOnce()
 {
+  // Acquire RS485 mutex for the entire stop sequence
+  bool haveLock = (g_rs485Mutex != NULL && 
+                   xSemaphoreTake(g_rs485Mutex, pdMS_TO_TICKS(RS485_LOCK_TIMEOUT_MS)) == pdTRUE);
+  
   for (size_t i = 0; i < (sizeof(RELAYS_ALL) / sizeof(RELAYS_ALL[0])); i++) {
-    RTU_MASTER.writeHoldingRegister(RELAYS_ALL[i].slave, RELAYS_ALL[i].reg, 512);
+    // Retry up to 3 times per relay during stop (critical operation)
+    for (int attempt = 0; attempt < 3; attempt++) {
+      uint8_t ret = RTU_MASTER.writeHoldingRegister(RELAYS_ALL[i].slave, RELAYS_ALL[i].reg, 512);
+      if (ret == 0) break;
+      vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
     vTaskDelay(20 / portTICK_PERIOD_MS);
     esp_task_wdt_reset();
   }
+  
+  if (haveLock) xSemaphoreGive(g_rs485Mutex);
 }
 
 void verifyRelaysOffAndAutoFix(bool reportToBlynk)
@@ -78,7 +93,11 @@ void verifyRelaysOffAndAutoFix(bool reportToBlynk)
   const int ROUNDS = 3;
   for (int r = 1; r <= ROUNDS; r++) {
     for (size_t i = 0; i < (sizeof(RELAYS_ALL) / sizeof(RELAYS_ALL[0])); i++) {
-      RTU_MASTER.writeHoldingRegister(RELAYS_ALL[i].slave, RELAYS_ALL[i].reg, 512);
+      for (int a = 0; a < 2; a++) {
+        uint8_t rret = RTU_MASTER.writeHoldingRegister(RELAYS_ALL[i].slave, RELAYS_ALL[i].reg, 512);
+        if (rret == 0) break;
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+      }
       vTaskDelay(20 / portTICK_PERIOD_MS);
       esp_task_wdt_reset();
     }
