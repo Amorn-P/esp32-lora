@@ -571,6 +571,22 @@ void internetcheck() {
       bot1.sendMessage(Bot_Group, message, "");
     }
   }
+
+  // ---- v2.1.1: Slave offline/recovery alert (set by Task3 heartbeat) ----
+  extern volatile bool g_slaveAlertPending;
+  extern volatile uint8_t g_slaveAlertId;
+  extern volatile bool g_slaveAlertIsDown;
+
+  if (Internet == 1 && g_slaveAlertPending) {
+    g_slaveAlertPending = false;
+    if (g_slaveAlertIsDown) {
+      message = "⚠️ ALERT: Slave Board " + String(g_slaveAlertId) + " OFFLINE\nตรวจสอบสาย RS485 และไฟเลี้ยง slave";
+    } else {
+      message = "✅ RECOVERED: Slave Board " + String(g_slaveAlertId) + " กลับมาออนไลน์แล้ว";
+    }
+    bot1.sendMessage(Bot_Group, message, "");
+  }
+
   esp_task_wdt_reset();
 }
 

@@ -64,10 +64,36 @@ extern SemaphoreHandle_t g_rs485Mutex;
 bool relayState[22] = {false};
 
 // Error tracking for field diagnostics
-static uint32_t g_relayWriteErrors   = 0;
-static uint32_t g_relayWriteTotal    = 0;
-static uint32_t g_busRecoveryCount   = 0;
+static uint32_t g_relayWriteErrors     = 0;
+static uint32_t g_relayWriteTotal      = 0;
+static uint32_t g_relayTimeoutErrors   = 0;   // No response (>3)
+static uint32_t g_relayExceptionErrors = 0;   // Modbus exception (1-3)
+static uint32_t g_busRecoveryCount     = 0;
 static uint32_t g_slaveTimeoutCount[6] = {0};  // Per-slave (1-5)
+
+// ===========================================================================
+// PUMP STATUS BUZZER & LED STATE MACHINE (v2.1.0)
+// ===========================================================================
+// Alerts farm operators on pump state CHANGE (edge-triggered, not continuous).
+// Runs 3 rounds of BUZZER_ON_SEC/BUZZER_OFF_SEC then stays silent.
+// LED is steady-state: ON when pump is running, OFF when idle.
+// ===========================================================================
+
+enum BuzzerPhase { BZ_IDLE, BZ_ON, BZ_OFF };
+static BuzzerPhase buzzerPhase = BZ_IDLE;
+static int  buzzerRound       = 0;
+static int  buzzerCountdown   = 0;    // Seconds remaining in current phase
+static bool pumpPrevState     = false; // Edge detection on relayState[1]
+
+// Helper: set physical buzzer relay (respects BUZZER_ACTIVE_LOW config)
+static inline void setBuzzerRelay(bool on)
+{
+#if BUZZER_ACTIVE_LOW
+  digitalWrite(BUZZER_RELAY_PIN, on ? LOW : HIGH);
+#else
+  digitalWrite(BUZZER_RELAY_PIN, on ? HIGH : LOW);
+#endif
+}
 
 // ===========================================================================
 // SLAVE ALIVE TRACKING (safe, read-based)
@@ -100,7 +126,13 @@ static uint8_t modbusWriteRegister(uint8_t slaveId, uint16_t reg, uint16_t value
     }
   }
   
+  // Categorize the error for field diagnostics
   g_relayWriteErrors++;
+  if (finalRet > 3) {
+    g_relayTimeoutErrors++;   // No response / timeout
+  } else {
+    g_relayExceptionErrors++; // Modbus exception (1-3)
+  }
   return finalRet;
 }
 
@@ -195,6 +227,13 @@ void Task3code(void *pvParameters)
   DEBUG_PRINTLN(xPortGetCoreID());
   esp_task_wdt_add(NULL);
 
+  // ---- v2.1.0: Initialize pump status LED & buzzer relay pins ----
+  pinMode(PUMP_LED_PIN, OUTPUT);
+  digitalWrite(PUMP_LED_PIN, LOW);
+  pinMode(BUZZER_RELAY_PIN, OUTPUT);
+  setBuzzerRelay(false);  // Buzzer OFF at boot
+  DEBUG_PRINTF("[TASK3] Buzzer/LED pins: LED=GPIO%d, Buzzer=GPIO%d\n", PUMP_LED_PIN, BUZZER_RELAY_PIN);
+
   for (;;)
   {
     // =======================================================================
@@ -207,8 +246,14 @@ void Task3code(void *pvParameters)
     // =======================================================================
     #if SIMULATION_MODE == 0
     static unsigned long lastHeartbeat = 0;
+    static bool s_slaveWasDown[6]    = {false}; // Per-slave alert state
+    static unsigned long s_bootGrace  = 0;       // Boot grace period (30s)
+    
     if (millis() - lastHeartbeat > 2000) {
       lastHeartbeat = millis();
+      
+      // Set 30s boot grace on first heartbeat (allow slaves to power up)
+      if (s_bootGrace == 0) s_bootGrace = millis() + 30000;
       
       if (g_rs485Mutex != NULL &&
           xSemaphoreTake(g_rs485Mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -228,19 +273,46 @@ void Task3code(void *pvParameters)
         
         xSemaphoreGive(g_rs485Mutex);
       }
+      
+      // ---- v2.1.1: Slave offline/recovery alert (outside mutex) ----
+      // Only after boot grace to avoid false alerts during power-up
+      if (millis() > s_bootGrace) {
+        for (uint8_t s = 1; s <= 5; s++) {
+          bool alive = (millis() - g_slaveLastAlive[s] < 10000);
+          
+          if (!alive && !s_slaveWasDown[s]) {
+            // Slave just went offline — flag alert
+            s_slaveWasDown[s] = true;
+            if (!g_slaveAlertPending) {  // Don't overwrite a pending alert
+              g_slaveAlertId = s;
+              g_slaveAlertIsDown = true;
+              g_slaveAlertPending = true;
+            }
+          }
+          else if (alive && s_slaveWasDown[s]) {
+            // Slave just recovered — flag alert
+            s_slaveWasDown[s] = false;
+            if (!g_slaveAlertPending) {
+              g_slaveAlertId = s;
+              g_slaveAlertIsDown = false;
+              g_slaveAlertPending = true;
+            }
+          }
+        }
+      }
     }
     #endif
 
     // =======================================================================
-    // STATE GUARD: Re-assert all relay states every 2 seconds
+    // STATE GUARD: Re-assert all relay states every 2 seconds (v2.1.1 optimized)
     // =======================================================================
-    // [FIX v2.0] Reduced from 10s → 2s. 
-    // If RS485 bus noise corrupts a relay state, it gets corrected within 
-    // 2 seconds instead of 10. This is critical for farm environments with 
-    // motor/pump EMI that can induce false Modbus writes.
-    // 
-    // During IDLE: writes OFF to all 21 relays
-    // During RUN:  re-sends current commanded state
+    // If RS485 bus noise corrupts a relay state, it gets corrected within
+    // 2 seconds. Critical for farm environments with motor/pump EMI.
+    //
+    // v2.1.1 optimization:
+    //   - Relays expected ON:  always re-assert (noise could turn them OFF)
+    //   - Relays expected OFF: read-back first, write only if glitched ON
+    //   This reduces idle bus traffic from 21 writes to 0 writes per cycle.
     // =======================================================================
     #if SIMULATION_MODE == 0
     static unsigned long lastStateGuard = 0;
@@ -253,11 +325,26 @@ void Task3code(void *pvParameters)
         for (int i = 1; i <= 21; i++) {
           uint8_t  s = SYSTEM_VALVE_MAP[i].slaveId;
           uint8_t  r = SYSTEM_VALVE_MAP[i].relayIndex + 1;
-          uint16_t v = relayState[i] ? 256 : 512;
+          bool expectedOn = relayState[i];
           
-          // Single write (no retry needed — state guard runs frequently)
-          uint8_t ret = RTU_MASTER.writeHoldingRegister(s, r, v);
-          if (ret == 0) g_slaveLastAlive[s] = millis();
+          if (expectedOn) {
+            // Critical: re-assert ON (noise could have turned it OFF)
+            uint16_t v = 256; // ON = 0x0100
+            uint8_t ret = RTU_MASTER.writeHoldingRegister(s, r, v);
+            if (ret == 0) g_slaveLastAlive[s] = millis();
+          } else {
+            // Optimized: read first, only write if glitch detected
+            uint16_t regData[1] = {0};
+            uint8_t ret = RTU_MASTER.readHoldingRegister(s, r, regData, 1);
+            if (ret == 0) {
+              g_slaveLastAlive[s] = millis();
+              if (regData[0] == 256) {
+                // Glitch! Relay is ON but should be OFF — fix it
+                RTU_MASTER.writeHoldingRegister(s, r, 512); // OFF = 0x0200
+                DEBUG_PRINTF("[GUARD] Glitch fixed: SV%d (slave %d reg %d) forced OFF\n", i, s, r);
+              }
+            }
+          }
           
           // Small inter-frame gap (3.5 chars)
           vTaskDelay(3 / portTICK_PERIOD_MS);
@@ -367,13 +454,14 @@ void Task3code(void *pvParameters)
           
           // --- ERROR REPORT (field diagnostics) ---
           if (g_relayWriteErrors > 0) {
-            DEBUG_PRINTF("[DIAG] Modbus errors: %u / %u writes (%.1f%%), bus recoveries: %u\n",
-              (unsigned int)g_relayWriteErrors, (unsigned int)g_relayWriteTotal,
+            DEBUG_PRINTF("[DIAG] Modbus: %u errors (%u timeout, %u exception) / %u writes (%.1f%%), bus recoveries: %u\n",
+              (unsigned int)g_relayWriteErrors, (unsigned int)g_relayTimeoutErrors, (unsigned int)g_relayExceptionErrors,
+              (unsigned int)g_relayWriteTotal,
               (g_relayWriteTotal > 0) ? (100.0f * g_relayWriteErrors / g_relayWriteTotal) : 0.0f,
               (unsigned int)g_busRecoveryCount);
             // Reset for next cycle
-            g_relayWriteErrors = 0;
-            g_relayWriteTotal = 0;
+            g_relayWriteErrors = 0;    g_relayWriteTotal = 0;
+            g_relayTimeoutErrors = 0;  g_relayExceptionErrors = 0;
           }
         } else {
           int progress = map(CountP1Min, 0, TA40, 0, 100);
@@ -382,6 +470,68 @@ void Task3code(void *pvParameters)
       }
     }
     
+    // =======================================================================
+    // PUMP STATUS LED & BUZZER (v2.1.0) — 1-second tick
+    // =======================================================================
+    // LED: mirrors pump state (relayState[1])
+    digitalWrite(PUMP_LED_PIN, relayState[1] ? HIGH : LOW);
+
+    // Buzzer: edge-triggered alert on pump state CHANGE
+    // Detect transition: pumpPrevState != relayState[1]
+    if (relayState[1] != pumpPrevState && !stopInProgress) {
+      pumpPrevState = relayState[1];
+      buzzerPhase    = BZ_ON;
+      buzzerRound    = 0;
+      buzzerCountdown = BUZZER_ON_SEC;
+      setBuzzerRelay(true);
+      DEBUG_PRINTF("[BUZZER] Pump %s — alert started (%d rounds)\n",
+        relayState[1] ? "ON" : "OFF", BUZZER_ROUNDS);
+    }
+
+    // Buzzer finite state machine
+    if (buzzerPhase != BZ_IDLE) {
+      buzzerCountdown--;
+      if (buzzerCountdown <= 0) {
+        if (buzzerPhase == BZ_ON) {
+          // End of ON phase → next round or finish
+          buzzerRound++;
+          if (buzzerRound >= BUZZER_ROUNDS) {
+            // Sequence complete — go idle
+            buzzerPhase = BZ_IDLE;
+            setBuzzerRelay(false);
+            DEBUG_PRINTLN("[BUZZER] Alert sequence finished");
+          } else {
+            // Next OFF phase
+            buzzerPhase    = BZ_OFF;
+            buzzerCountdown = BUZZER_OFF_SEC;
+            setBuzzerRelay(false);
+          }
+        } else { // BZ_OFF
+          // End of OFF phase → next ON phase
+          buzzerPhase    = BZ_ON;
+          buzzerCountdown = BUZZER_ON_SEC;
+          setBuzzerRelay(true);
+        }
+      }
+
+      // Safety: if pump state changes mid-sequence, reset for new edge
+      if (relayState[1] != pumpPrevState) {
+        // This shouldn't normally happen, but handle gracefully
+        buzzerPhase = BZ_IDLE;
+        setBuzzerRelay(false);
+      }
+    }
+
+    // Emergency stop override: immediately silence buzzer
+    if (stopInProgress && buzzerPhase != BZ_IDLE) {
+      buzzerPhase = BZ_IDLE;
+      buzzerRound = 0;
+      buzzerCountdown = 0;
+      setBuzzerRelay(false);
+      pumpPrevState = relayState[1];  // Sync edge detection
+      DEBUG_PRINTLN("[BUZZER] Silenced by stop");
+    }
+
     // =======================================================================
     // TASK YIELD — 1 second tick
     // =======================================================================

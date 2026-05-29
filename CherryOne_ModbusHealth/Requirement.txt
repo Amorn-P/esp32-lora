@@ -1,11 +1,20 @@
-Requirement - CherryOne v1.2.0
+================================================================================
+Requirement — CherryOne v2.0.0
 ESP32 Master controller for RS485 Modbus RTU 8-channel relay modules
+================================================================================
 
 HARDWARE
-  ESP32 38-pin (Master)
-  5x RS485 8-channel Relay Modules (Slaves ID 1-5)
+  ESP32 38-pin DOIT DevKit v1 (Master)
+  5× RS485 8-channel Relay Modules (Slaves ID 1-5)
   DS1302 RTC (CE=15, IO=4, CLK=5)
-  RS485: RXD2=16, TXD2=17
+  RS485: RXD2=16, TXD2=17, 9600 baud 8N1
+
+GPIO32 ──[220Ω]──|>|── GND     (LED)
+GPIO33 ── IN  (12VDC relay module)
+          VCC ── 12V PSU
+          GND ── Common GND
+          NO/COM ── Buzzer (12V) in series
+User_config.h	Change active low/high	  
 
 RELAY MAPPING (Board_ID.h + Relay_config.h)
   Board 0 (ID=1): Relay 0 = Pump (always ON during any mode)
@@ -15,32 +24,33 @@ RELAY MAPPING (Board_ID.h + Relay_config.h)
   Board 4 (ID=5): Relay 0-5 Active, 6-7 Spare
 
 CONNECTIVITY
-  Platform: espressif32@3.5.0 (ESP32 Arduino Core 1.0.6)
-  WiFi Manager: IotWebConf 3.0.4
-    AP Mode: CherryOne / 11111111 @ 192.168.4.1
-    Fallback WiFi: Gilbert_2.4G
-  Blynk Legacy: 43.229.135.169:8080 (NO SSL)
-  Telegram: UniversalTelegramBot 1.3.0
-  NTP: asia.pool.ntp.org (UTC+7)
-  Internet Check: client.connect("www.google.com", 80) via SimpleTimer
+  Platform:    espressif32@3.5.0 (ESP32 Arduino Core 1.0.6)
+  WiFi Manager:IotWebConf 3.0.4
+  AP Mode:     CherryOne / 11111111 @ 192.168.4.1
+  Fallback:    Gilbert_2.4G (if EEPROM config is empty)
+  Blynk Legacy:43.229.135.169:8080 (NO SSL)
+  Library:     Blynk 0.6.1 (legacy — NOT 1.3.x IoT)
+  Telegram:    UniversalTelegramBot 1.3.0
+  NTP:         asia.pool.ntp.org (UTC+7)
+  Internet Check: client.connect("google.com", 80) via SimpleTimer
 
 OPERATION MODES
   1. Sch1 (Period 1): Time-triggered cascade, all 21 valves sequential
   2. Sch2 (Period 2): Time-triggered cascade, all 21 valves sequential
   3. Manual: Single relay + Pump, switchable during run
-  Mutual Exclusion: Manual <-> Sch1/Sch2 (cannot overlap)
+  Mutual Exclusion: Manual ←→ Sch1/Sch2 (cannot overlap)
   Overlap: 1 minute between sequential relays
 
 POWER-LOSS SAFETY
-  RS485 Modbus Watchdog:
-    Startup: writeHoldingRegister(slave, 0x00FE, 5) = 5s timeout
-    Runtime: heartbeat to 0x00FF on all slaves every 2s
-    ESP32 dies -> no heartbeat -> 5s timeout -> all relays OFF
-  EEPROM persistence: CountP1Min saved every minute for resume
+  RS485 Modbus Watchdog (register 0x00FE):
+    - Configured at boot: writeHoldingRegister(slave, 0x00FE, 5) = 5s timeout
+    - ESP32 dies → no heartbeat → 5 s timeout → all relays OFF
+  Preferences (NVS): CountP1Min saved every minute boundary for resume
+  EEPROM: Period/Manual status saved on change
 
-EEPROM MEMORY MAP (validated on boot, -1 replaced with defaults)
-  Address 0:   Bot_Token_1 [60]
-  Address 70:  Bot_Group [20]
+EEPROM MEMORY MAP (validated on boot, corrupted values replaced with defaults)
+  Address   0: Bot_Token_1 [60 chars]
+  Address  70: Bot_Group [20 chars]
   Address 100: BlynkRst_Hr_int
   Address 110: BlynkRst_Min_int
   Address 150: Period1_Time_Start_Hr_int
@@ -56,13 +66,66 @@ EEPROM MEMORY MAP (validated on boot, -1 replaced with defaults)
   Address 260: Manual status
   Address 500: currentMode (0=AP, 1=Fast)
 
-STABILITY FEATURES
-  BLYNK_WRITE_SAFE mutex on all cross-core Blynk writes
-  preferencesMutex for Preferences access
-  blynkMutex for Blynk buffer protection
-  Blynk.connect() throttled to every 5s (prevents Core 1 blocking)
-  configSaved() 60s boot guard + 3s EEPROM commit delay
-  Task4 WiFi guard before Blynk operations
-  Hardware WDT 30s + Software WDT 25s proactive feed
-  Fallback WiFi in connectWifi() for config corruption recovery
-  OTA Update via Blynk V123-V124 with safety relay shutdown
+TASK ARCHITECTURE (FreeRTOS, Core-pinned, Priority-ordered)
+
+  Core 0 (Background — priority 1):
+    Task1  "Task1_IoTWeb"    8000 bytes  prio 1   IoT Web Config loop (IotWebConf)
+    Task2  "Task2_NTP"       8000 bytes  prio 1   NTP sync + schedule trigger logic
+    Task5  "Task5_Counter"   4000 bytes  prio 1   Minute counter (CountP1 / CountP1Min)
+    Task8  "Task8_SW_WDT"    4000 bytes  prio 1   Software watchdog (proactive feed)
+
+  Core 1 (Critical — priority 2–3):
+    Task3  "Task3_Relay"     8000 bytes  prio 3   Relay state machine + Modbus heartbeat + state guard
+    Task6  "Task6_Stop"      6000 bytes  prio 2   Stop worker (non-blocking emergency stop)
+    Task4  "Task4_Blynk"     8000 bytes  prio 2   Blynk.run() + web config reset handler
+
+  Mutexes:
+    preferencesMutex   — protects Preferences (NVS) across Task3/Task5
+    blynkMutex         — protects Blynk virtualWrite across Core 0 / Core 1
+    g_rs485Mutex       — protects Serial2 (Modbus RTU) across Task3/Task6/Blynk callbacks
+
+STABILITY FEATURES (v2.0.0)
+  • BLYNK_WRITE_SAFE mutex on all cross-core Blynk writes
+  • RS485 bus mutex (g_rs485Mutex) — prevents concurrent Modbus access
+  • Modbus write retry: 3 attempts with 15ms backoff + verification
+  • State guard: re-asserts all 21 relay states every 2 seconds (corrects noise glitches)
+  • Slave heartbeat: safe readHoldingRegister(0x0001, ...) — NO writes to unknown registers
+  • Bus recovery: auto-flush Serial2 after 10 consecutive Modbus timeouts
+  • Blynk.connect() throttled to every 5 s (prevents Core 1 blocking)
+  • configSaved() 60 s boot guard + 3 s EEPROM commit delay
+  • Task4 WiFi guard before Blynk operations
+  • Hardware WDT 60 s + Software WDT 25 s proactive feed
+  • Fallback WiFi in connectWifi() for config corruption recovery
+  • Boot relay safety: TX pin driven LOW before Serial2 init
+  • OTA Update via Blynk V123-V124 with safety relay shutdown
+  • All EEPROM values validated on boot — corrupted values auto-replaced
+
+RS485 HARDWARE REQUIREMENTS
+  See docs/RS485_HARDWARE_GUIDE.md for termination, biasing, cabling, and topology.
+  Minimum for field deployment:
+    - 120Ω termination at both ends of the bus
+    - 680Ω fail-safe bias (A→5V, B→GND) at master end
+    - Twisted-pair shielded cable, daisy-chain topology
+
+VERSION HISTORY
+  v2.0.0 (2026-05-28): Phantom relay fix, RS485 mutex, retry, state guard, task priorities
+  v1.2.0 (2026-05-20): Stable — WiFi, Internet, Blynk, Telegram, Manual, Sch1, Sch2 all working
+  
+  Update memory before shutdown
+ C:\Users\SKY> wsl
+    $ cd /mnt/c/Users/SKY/Documents/PlatformIO/Projects/Project_Preperation/scripts && bash sync-push.sh
+    Or one-liner from CMD without entering WSL:
+    wsl bash -c "cd /mnt/c/Users/SKY/Documents/PlatformIO/Projects/Project_Preperation/scripts && bash sync-push.sh"
+	
+Flash to ESP32
+	from .pio/build/esp32doit-devkit-v1/firmware.bin
+	C:\Users\SKY\Documents\PlatformIO\Projects\Project_Preperation\CherryOne_ModbusHealth
+	pio run --target upload --upload-port COM3
+	or
+	cd "C:\Users\SKY\Documents\PlatformIO\Projects\Project_Preperation\CherryOne_ModbusHealth"
+	pio run --target upload --upload-port COM3
+
+Set monitor baudrate	
+C:\Users\SKY>
+	pio device monitor --port COM3
+	pio device monitor --port COM3 --baud 115200

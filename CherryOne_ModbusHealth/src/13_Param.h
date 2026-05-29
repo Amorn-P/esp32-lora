@@ -441,6 +441,12 @@ volatile int BlynkRun_once1 = 0;  // [FIX] volatile:  Task4/Blynk,  Task2
 // ==========================================================
 // non-blocking ( BLYNK_WRITE(V0)  Task6 )
 volatile bool stopRequested = false;
+
+// Slave offline/recovery alert (Task3 → internetcheck → Telegram)
+volatile bool g_slaveAlertPending = false;
+volatile uint8_t g_slaveAlertId = 0;
+volatile bool g_slaveAlertIsDown = true;  // true=just went offline, false=just recovered
+
 // 1  ( Time_run_once )
 
 int Time_run_once1 = 0;  // Telegram notification  Period1

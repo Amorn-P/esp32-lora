@@ -28,9 +28,15 @@ Update memory before shutdown
     Or one-liner from CMD without entering WSL:
     wsl bash -c "cd /mnt/c/Users/SKY/Documents/PlatformIO/Projects/Project_Preperation/scripts && bash sync-push.sh"
 	
-		Flash to ESP32 from .pio/build/esp32doit-devkit-v1/firmware.bin
+Flash to ESP32
+	from .pio/build/esp32doit-devkit-v1/firmware.bin
 	C:\Users\SKY\Documents\PlatformIO\Projects\Project_Preperation\CherryOne_ModbusHealth
 	pio run --target upload --upload-port COM3
 	or
 	cd "C:\Users\SKY\Documents\PlatformIO\Projects\Project_Preperation\CherryOne_ModbusHealth"
 	pio run --target upload --upload-port COM3
+
+Set monitor baudrate	
+C:\Users\SKY>
+	pio device monitor --port COM3
+	pio device monitor --port COM3 --baud 115200
