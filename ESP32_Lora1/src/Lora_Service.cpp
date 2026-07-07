@@ -3,15 +3,10 @@
  */
 
 #include "Lora_Service.h"
-#include "wokwi_stubs.h"
 
 SX1278 LoraService::radio = new Module(SS_PIN, DIO0_PIN, RST_PIN);
 
 bool LoraService::init() {
-#ifdef WOKWI
-    Serial.println(F("[LoRa] WOKWI stub — radio disabled"));
-    return true;
-#else
     Serial.print(F("[LoRa] Init SX1278 ... "));
     int state = radio.begin(LORA_FREQ, LORA_BW, LORA_SF, LORA_CR,
                             LORA_SYNC_WORD, LORA_TX_POWER);
@@ -22,25 +17,16 @@ bool LoraService::init() {
     }
     Serial.printf("FAIL (code %d)\n", state);
     return false;
-#endif
 }
 
 bool LoraService::sendPacket(LuckyPacket &packet) {
-#ifdef WOKWI
-    Serial.printf("[LoRa STUB] TX to Board %d, cmd=%d\n", packet.targetId, packet.cmdType);
-    return true;
-#else
     packet.checksum = calculateChecksum(&packet);
     int state = radio.transmit((uint8_t*)&packet, sizeof(LuckyPacket));
     radio.startReceive();
     return (state == RADIOLIB_ERR_NONE);
-#endif
 }
 
 bool LoraService::receivePacket(LuckyPacket &packet) {
-#ifdef WOKWI
-    return false;
-#else
     if (!(radio.getIRQFlags() & RADIOLIB_SX127X_CLEAR_IRQ_FLAG_RX_DONE)) {
         return false;
     }
@@ -48,13 +34,10 @@ bool LoraService::receivePacket(LuckyPacket &packet) {
     radio.startReceive();
     if (state != RADIOLIB_ERR_NONE) return false;
     return verifyChecksum(&packet);
-#endif
 }
 
 void LoraService::startReceive() {
-#ifndef WOKWI
     radio.startReceive();
-#endif
 }
 
 uint16_t LoraService::calculateChecksum(LuckyPacket *p) {

@@ -1,0 +1,80 @@
+Requirement Lucky_Lora Project
+
+1 set of Master board (Board ID 0)
+	1 ESP32 38 pins
+	1 Lora SX1278
+	1 DS3231
+	1 dip switch 8 pins (ID selection)
+	1 LCD 2004
+7 set of Slaves board (Board ID 1-7)
+	1 ESP32 38 pins
+	1 Lora SX1278
+	1 DS3231
+	1 module 8 relays (GPIO 12 skipped for safety, max 7 relays used)
+	1 dip switch 8 pins (ID selection)
+
+Pin connection (Standard for all boards)
+GPIO23 MOSI SX1278
+GPIO22 SCL DS3231, LCD2004
+GPIO21 SDA DS3231, LCD2004
+GPIO19 MISO SX1278
+GPIO18 SCK SX1278
+GPIO5 SS SX1278
+GPIO4 RST SX1278
+GPIO2 DIO0 SX1278
+GPIO36 Dipswitch Pin 1 (Bit 0)
+GPIO39 Dipswitch Pin 2 (Bit 1)
+GPIO34 Dipswitch Pin 3 (Bit 2)
+GPIO35 Dipswitch Pin 4 (Service Mode)
+
+Relay Mapping (Slave Boards)
+GPIO13 Relay 1 (ID 1)
+GPIO14 Relay 2 (ID 2)
+GPIO27 Relay 3 (ID 3)
+GPIO26 Relay 4 (ID 4)
+GPIO25 Relay 5 (ID 5)
+(GPIO 12 - SKIPPED)
+GPIO33 Relay 6 (ID 6)
+GPIO32 Relay 7 (ID 7)
+
+Software Architecture
+Blynk Legacy Version 2.27.34 Server 43.229.135.169
+OTA, WiFi, Blynk, and Telegram
+Master: Broker (NTP Sync, Blynk Bridge, LoRa Broadcast)
+Unified Slave Firmware (Logic branches based on Dipswitch ID)
+Communication: RadioLib SX1278, Star Topology.
+WiFi manager for setup local WiFi
+User_config.h for config Blynk and Telegram
+NTP is default, if cannot connect internet use RTC
+Automatic update RTC when restart
+
+### 1. Power Management (B1 & B2)
+- **B1 and B2:** Independent pumps. Managed by the system to ensure they do not run at the same time as other pumps/valves to prevent exceeding electric power limits.
+- **Scheduling:** B1 and B2 each have their own independent Period 1 & Period 2 Start Time and Duration configured via Blynk.
+
+### 2. Sequential & Pump Logic (B3-B7)
+- **Group Scheduling:** B3-B7 share a combined Period 1 & Period 2 Start Time and Duration setting.
+- **Board 3 (Pump):** Automatically activates when any worker relay on B4, B5, B6, or B7 is active.
+- **Worker Group (B4-B7):** 
+    - B4: 4 active relays
+    - B5: 6 active relays
+    - B6: 4 active relays
+    - B7: 6 active relays
+- **Sequence:** Only one relay from the entire group {B4, B5, B6, B7} is "nominally" active, but they utilize a 1-minute overlap.
+- **Overlap:** 1-minute overlap between *every* relay in the sequence, whether on the same board or transitioning between boards (e.g., B4 Relay 4 overlaps with B5 Relay 1 for 1 minute).
+- **Control:** Master calculates the full start/stop schedule for all boards (B1-B7) and broadcasts it. Slaves save this to NVM (Preferences) and execute independently using local RTC.
+
+### 3. Manual Mode
+- Triggered via Blynk (V107-V109).
+- Target: Individual Relay ID (mapped to B4-B7).
+- B3 (Pump) starts/stops automatically with the manual command.
+- Manual commands are real-time and do not require NVM storage.
+
+### 4. Safety & Persistence
+- **Autonomous Operation:** If LoRa communication fails, all boards (B1-B7) continue their internal schedule from NVM memory using local DS3231 RTC.
+- **Heartbeat:** Slaves report status to Master.
+- **Emergency Stop:** Global broadcast.
+- **OTA Support:** All boards support ArduinoOTA for future wireless updates.
+- **Standby:** All relays OFF.
+
+a//home/sky/.hermes/skills/openclaw-imports/esp32-software-engineer/references/solar-controller-design.md → b//home/sky/.hermes/skills/openclaw-imports/esp32-software-engineer/references/solar-controller-design.md

@@ -1,18 +1,17 @@
 /**
- * User_config.h - ESP32_Lora Credentials & Parameters
- * Master (AA) uses all fields. Slave (B1-B7) uses only LoRa + NTP fields.
+ * CommCore_Telegram.h - Telegram Bot Setup + Send
+ * 
+ * Requires TELEGRAM_CERTIFICATE_ROOT defined in User_config.h
+ * Requires Bot_Token_1[60] and Bot_Group[20] from CommCore_Params.h
  */
 
-#ifndef USER_CONFIG_H
-#define USER_CONFIG_H
+#ifndef COMMCORE_TELEGRAM_H
+#define COMMCORE_TELEGRAM_H
+
+#include "CommCore_Params.h"
 
 // ============================================================
-// BOARD IDENTITY - now in CommCore_Globals.cpp
-// ============================================================
-#if BOARD_TYPE == 0
-
-// ============================================================
-// TELEGRAM SSL CERTIFICATE (Master only)
+// TELEGRAM SSL CERTIFICATE (Must be in User_config.h)
 // ============================================================
 #ifndef TELEGRAM_CERTIFICATE_ROOT
 #define TELEGRAM_CERTIFICATE_ROOT \
@@ -39,31 +38,22 @@
   "L5H4yG7V6r7o1J9H7i8P2a9T4w6r3dV2s1L9zF5k3g0s2o8j1v6s9=\n" \
   "-----END CERTIFICATE-----\n"
 #endif
-#endif // BOARD_TYPE == 0
 
 // ============================================================
-// LORA SETTINGS (Both Master & Slave)
+// TELEGRAM SETUP
 // ============================================================
-#define LORA_FREQ                433.0
-#define LORA_BW                  125.0
-#define LORA_SF                  9
-#define LORA_CR                  7
-#define LORA_TX_POWER            17
-#define LORA_SYNC_WORD           0x12
+void CommCore_telegramSetup() {
+  bot1 = UniversalTelegramBot(String(Bot_Token_1), secured_client1);
+  secured_client1.setCACert(TELEGRAM_CERTIFICATE_ROOT);
+}
 
 // ============================================================
-// HEARTBEAT INTERVAL (ms)
+// SEND TELEGRAM MESSAGE (simple wrapper)
 // ============================================================
-#define HEARTBEAT_INTERVAL       10000
+bool CommCore_sendTelegram(const char* msg) {
+  if (Internet != 1) return false;
+  if (strlen(Bot_Token_1) < 20 || strlen(Bot_Group) < 3) return false;
+  return bot1.sendMessage(Bot_Group, msg, "");
+}
 
-// ============================================================
-// RELAY COUNT
-// ============================================================
-#define TOTAL_RELAYS             7
-
-// ============================================================
-// TELEGRAM MUTE DEFAULT (V138 toggle)
-// ============================================================
-#define TELEGRAM_MUTE_DEFAULT    false
-
-#endif // USER_CONFIG_H
+#endif // COMMCORE_TELEGRAM_H

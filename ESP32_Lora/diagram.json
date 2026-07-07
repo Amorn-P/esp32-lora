@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "author": "Lucky",
+  "editor": "web",
+  "parts": [
+    {
+      "type": "wokwi/esp32-devkit-v1",
+      "id": "esp-master",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/ds3231",
+      "id": "rtc-master",
+      "top": 250,
+      "left": -100,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/lcd2004-i2c",
+      "id": "lcd-master",
+      "top": 300,
+      "left": 200,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/dip-switch-4",
+      "id": "dip-master",
+      "top": 50,
+      "left": 350,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/esp32-devkit-v1",
+      "id": "esp-b3",
+      "top": 0,
+      "left": 600,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/ds3231",
+      "id": "rtc-b3",
+      "top": 250,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/led",
+      "id": "led-b3-relay1",
+      "top": 50,
+      "left": 750,
+      "attrs": { "color": "red" }
+    },
+    {
+      "type": "wokwi/dip-switch-4",
+      "id": "dip-b3",
+      "top": 50,
+      "left": 950,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/potentiometer",
+      "id": "pot-b3-solar",
+      "top": 100,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/esp32-devkit-v1",
+      "id": "esp-b4",
+      "top": 0,
+      "left": 1200,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/ds3231",
+      "id": "rtc-b4",
+      "top": 250,
+      "left": 1100,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/led",
+      "id": "led-b4-relay1",
+      "top": 50,
+      "left": 1350,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi/led",
+      "id": "led-b4-relay2",
+      "top": 100,
+      "left": 1350,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi/led",
+      "id": "led-b4-relay3",
+      "top": 150,
+      "left": 1350,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi/led",
+      "id": "led-b4-relay4",
+      "top": 200,
+      "left": 1350,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi/dip-switch-4",
+      "id": "dip-b4",
+      "top": 50,
+      "left": 1550,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi/led",
+      "id": "led-master-status",
+      "top": 100,
+      "left": 350,
+      "attrs": { "color": "blue" }
+    }
+  ],
+  "connections": []
+}

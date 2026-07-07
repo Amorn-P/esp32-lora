@@ -44,7 +44,6 @@ public:
     static void loadFromNVM();
     static void saveToNVM();
     static void setSchedule(Schedule s1, Schedule s2);
-    static void setSchedule(Schedule s1, Schedule s2, uint8_t offDur, uint8_t stopHr, uint8_t stopMin);
     static void setManual(uint8_t globalRelay, uint16_t durationMin);
     static void stopAll();
     static void resume();           // Clear stop flag
@@ -59,8 +58,6 @@ public:
 private:
     static uint8_t boardID;
     static Schedule sched1, sched2;
-    static uint8_t b2StopHr, b2StopMin;   // B2 stop time (from Master reserved bytes)
-    static uint8_t b1OffDur, b2OffDur;    // B1/B2 OFF cycle durations
     static uint8_t currentMode;    // 0=Idle, 1=P1, 2=P2, 3=Manual
     static uint8_t activeGlobalRelay;
 

@@ -10,7 +10,7 @@
  *   V132  : B3-B7 P2 Start        V133  : B3-B7 P2 Duration
  *   V134  : Manual Relay ID       V135  : Manual Duration
  *   V136  : Manual START          V137  : STOP ALL
- *   V138  : Telegram Mute Toggle  V140-V147 : B1/B2 Schedule
+ *   V140-V147 : B1/B2 (future)
  *
  * CommCore reserves: V90-V101, V118-V127
  */
@@ -34,28 +34,9 @@ uint8_t  blynkP1StartHr = 9, blynkP1StartMin = 0;
 uint8_t  blynkP2StartHr = 14, blynkP2StartMin = 0;
 uint16_t blynkP1Dur = 5, blynkP2Dur = 5;
 
-// B1/B2 independent schedule (V140-V147)
-uint8_t  blynkB1StartHr = 9, blynkB1StartMin = 0;
-uint16_t blynkB1OnDur  = 50;
-uint16_t blynkB1OffDur = 10;
-uint8_t  blynkB2StartHr = 9, blynkB2StartMin = 0;
-uint16_t blynkB2OnDur  = 50;
-uint16_t blynkB2OffDur = 10;
-
 // Manual mode buffer
 uint8_t  manualRelayID = 0;
 uint16_t manualDuration = 0;
-
-// Telegram mute flag (V138)
-bool telegramMuted = TELEGRAM_MUTE_DEFAULT;
-
-// ============================================================
-// TELEGRAM MUTE TOGGLE (V138)
-// ============================================================
-BLYNK_WRITE(V138) {
-    telegramMuted = (param.asInt() != 0);
-    Blynk.virtualWrite(138, telegramMuted ? 255 : 0);
-}
 
 // ============================================================
 // B3-B7 GROUP SCHEDULE — P1 (V130, V131)
@@ -119,46 +100,16 @@ BLYNK_WRITE(V136) {
 }
 
 // ============================================================
-// B1 SCHEDULE (V140, V141, V143) — V142 reserved
+// B1 & B2 Independent (V140-V147) — future use
 // ============================================================
-BLYNK_WRITE(V140) {
-    TimeInputParam t(param);
-    if (t.getStartHour() >= 0)   blynkB1StartHr = t.getStartHour();
-    if (t.getStartMinute() >= 0) blynkB1StartMin = t.getStartMinute();
-}
-
-BLYNK_WRITE(V141) {
-    blynkB1OnDur = param.asInt();
-    if (blynkB1OnDur == 0) blynkB1OnDur = 50;
-}
-
-BLYNK_WRITE(V142) {} // B1 P2 Start — reserved
-
-BLYNK_WRITE(V143) {
-    blynkB1OffDur = param.asInt();
-    if (blynkB1OffDur == 0) blynkB1OffDur = 10;
-}
-
-// ============================================================
-// B2 SCHEDULE (V144, V145, V147) — V146 reserved
-// ============================================================
-BLYNK_WRITE(V144) {
-    TimeInputParam t(param);
-    if (t.getStartHour() >= 0)   blynkB2StartHr = t.getStartHour();
-    if (t.getStartMinute() >= 0) blynkB2StartMin = t.getStartMinute();
-}
-
-BLYNK_WRITE(V145) {
-    blynkB2OnDur = param.asInt();
-    if (blynkB2OnDur == 0) blynkB2OnDur = 50;
-}
-
-BLYNK_WRITE(V146) {} // B2 P2 Start — reserved
-
-BLYNK_WRITE(V147) {
-    blynkB2OffDur = param.asInt();
-    if (blynkB2OffDur == 0) blynkB2OffDur = 10;
-}
+BLYNK_WRITE(V140) {} // B1 P1 Start
+BLYNK_WRITE(V141) {} // B1 P1 Duration
+BLYNK_WRITE(V142) {} // B1 P2 Start
+BLYNK_WRITE(V143) {} // B1 P2 Duration
+BLYNK_WRITE(V144) {} // B2 P1 Start
+BLYNK_WRITE(V145) {} // B2 P1 Duration
+BLYNK_WRITE(V146) {} // B2 P2 Start
+BLYNK_WRITE(V147) {} // B2 P2 Duration
 
 #endif // BLYNK_APP_H
 #endif // BOARD_TYPE == 0

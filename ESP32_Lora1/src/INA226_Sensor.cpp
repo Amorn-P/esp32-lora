@@ -8,7 +8,6 @@
 #if BOARD_TYPE != 0
 
 #include "INA226_Sensor.h"
-#include "wokwi_stubs.h"
 #include <Wire.h>
 
 INA226          INA226Sensor::ina(INA226_ADDR, &Wire);
@@ -29,12 +28,6 @@ bool            INA226Sensor::fanOn = false;
 // INIT
 // ============================================================
 bool INA226Sensor::init() {
-#ifdef WOKWI
-    // Wokwi stub: no real INA226, use potentiometer on ADC
-    pinMode(WOKWI_SOLAR_ADC_PIN, INPUT);
-    Serial.println("[INA226] WOKWI stub — using ADC pot for solar");
-    solarOK = true;
-#else
     // 1. INA226
     if (!ina.begin()) {
         Serial.println("[INA226] Init FAILED — solarOK=true (safe mode)");
@@ -59,7 +52,6 @@ bool INA226Sensor::init() {
     // 3. Fan GPIO
     pinMode(FAN_PIN, OUTPUT);
     digitalWrite(FAN_PIN, LOW);   // Fan OFF at boot
-#endif // WOKWI
 
     return true;
 }
@@ -71,16 +63,9 @@ void INA226Sensor::update() {
     if (millis() - lastRead < 5000) return;
     lastRead = millis();
 
-#ifdef WOKWI
-    // Read potentiometer on ADC, map 0-3.3V → 0-15V solar
-    int raw = analogRead(WOKWI_SOLAR_ADC_PIN);
-    busVoltage_V = (raw / 4095.0f) * 15.0f;
-    current_mA = (busVoltage_V >= 12.0f) ? 500.0f : 0.0f;
-#else
     // ---- Read INA226 ----
     busVoltage_V = ina.getBusVoltage();
     current_mA   = ina.getCurrent() * 1000.0;
-#endif
 
     // ---- Sun detection: Vbus >= 12.0V (with 1V hysteresis) ----
     bool sunNow;

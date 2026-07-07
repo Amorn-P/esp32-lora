@@ -2,11 +2,11 @@
  * Scheduler.cpp - Schedule Logic Implementation
  *
  * Board mapping:
- *   B1 (ID1): Independent pump, Blynk-configurable ON/OFF.
- *   B2 (ID2): Independent pump, Blynk ON/OFF + auto-stop (R2-15min).
- *             Solar check via INA226. NEVER overlaps with B3 pump.
- *   B3 (ID3): Group pump, ON during Round 1 & Round 2 valve windows.
- *             Solar check via INA226.
+ *   B1 (ID1): Independent pump, 1 relay. 50min ON / 10min OFF, 09:00-17:00.
+ *   B2 (ID2): Independent pump, 1 relay. 50min ON / 10min OFF, Master-start to 13:50.
+ *             Solar check via INA226 — pauses pump when current low.
+ *   B3 (ID3): Group pump, 1 relay. ON during Round 1 & Round 2 valve windows.
+ *             Solar check via INA226 — pauses pump when current low.
  *   B4 (ID4): Sequential valves, 4 relays (global 1-4)
  *   B5 (ID5): Sequential valves, 6 relays (global 5-10)
  *   B6 (ID6): Sequential valves, 4 relays (global 11-14)
@@ -25,10 +25,6 @@
 uint8_t         Scheduler::boardID = 0;
 Schedule        Scheduler::sched1 = {0,0,0};
 Schedule        Scheduler::sched2 = {0,0,0};
-uint8_t         Scheduler::b2StopHr = 0xFF;
-uint8_t         Scheduler::b2StopMin = 0xFF;
-uint8_t         Scheduler::b1OffDur = PUMP_OFF_MIN;
-uint8_t         Scheduler::b2OffDur = PUMP_OFF_MIN;
 uint8_t         Scheduler::currentMode = 0;
 uint8_t         Scheduler::activeGlobalRelay = 0;
 bool            Scheduler::isManualActive = false;
@@ -117,51 +113,31 @@ bool Scheduler::isInValveWindow(uint16_t currMins) {
 }
 
 // ============================================================
-// B1 PUMP LOGIC (Blynk-configurable ON/OFF, Blynk-start to 17:00)
+// B1 PUMP LOGIC (50/10, 09:00-17:00)
 // ============================================================
 bool Scheduler::isB1Active(uint16_t currMins) {
-    // Read from sched1 (Blynk-configurable), with defaults
-    uint16_t b1Start  = (sched1.startHr == 0 && sched1.startMin == 0)
-                        ? B1_START_MIN
-                        : (sched1.startHr * 60 + sched1.startMin);
-    uint8_t  onDur    = (sched1.duration > 0) ? sched1.duration : PUMP_ON_MIN;
-    uint8_t  offDur   = (b1OffDur > 0) ? b1OffDur : PUMP_OFF_MIN;
-
     // Outside operating window
-    if (currMins < b1Start || currMins >= B1_END_MIN) {
+    if (currMins < B1_START_MIN || currMins >= B1_END_MIN) {
         pumpIsOn = false;
         return false;
     }
 
-    // Inside window: ON/OFF cycle
-    uint16_t elapsed   = currMins - b1Start;
-    uint8_t  cycleLen  = onDur + offDur;
-    uint8_t  cyclePos  = elapsed % cycleLen;
+    // Inside window: 50 ON / 10 OFF cycle
+    // Cycle = 60 minutes. Position in cycle = minutes since 09:00 % 60
+    uint16_t elapsed   = currMins - B1_START_MIN;
+    uint8_t  cyclePos  = elapsed % (PUMP_ON_MIN + PUMP_OFF_MIN); // % 60
 
-    return (cyclePos < onDur);
+    return (cyclePos < PUMP_ON_MIN);
 }
 
 // ============================================================
-// B2 PUMP LOGIC (Blynk ON/OFF, Blynk-start to auto-stop, solar check)
-// B2 NEVER overlaps with B3: blocked during R1/R2 valve windows
+// B2 PUMP LOGIC (50/10, Master-start to 13:50, solar check)
 // ============================================================
 bool Scheduler::isB2Active(uint16_t currMins) {
-    uint16_t b2Start  = sched1.startHr * 60 + sched1.startMin;
-    uint8_t  onDur    = (sched1.duration > 0) ? sched1.duration : PUMP_ON_MIN;
-    uint8_t  offDur   = (b2OffDur > 0) ? b2OffDur : PUMP_OFF_MIN;
-
-    // Check stop time (0xFF sentinel = no stop set)
-    bool hasStop = (b2StopHr != 0xFF || b2StopMin != 0xFF);
-    uint16_t b2Stop = b2StopHr * 60 + b2StopMin;
+    uint16_t b2Start = sched1.startHr * 60 + sched1.startMin;
 
     // Outside operating window
-    if (currMins < b2Start || (hasStop && currMins >= b2Stop)) {
-        pumpIsOn = false;
-        return false;
-    }
-
-    // B2-B3 NEVER overlap: block while B3 valve window is active
-    if (isInValveWindow(currMins)) {
+    if (currMins < b2Start || currMins >= B2_END_MIN) {
         pumpIsOn = false;
         return false;
     }
@@ -174,12 +150,11 @@ bool Scheduler::isB2Active(uint16_t currMins) {
     }
 #endif
 
-    // Inside window: ON/OFF cycle
+    // Inside window: 50 ON / 10 OFF cycle
     uint16_t elapsed  = currMins - b2Start;
-    uint8_t  cycleLen = onDur + offDur;
-    uint8_t  cyclePos = elapsed % cycleLen;
+    uint8_t  cyclePos = elapsed % (PUMP_ON_MIN + PUMP_OFF_MIN);
 
-    return (cyclePos < onDur);
+    return (cyclePos < PUMP_ON_MIN);
 }
 
 // ============================================================
@@ -316,23 +291,6 @@ void Scheduler::setSchedule(Schedule s1, Schedule s2) {
     saveToNVM();
 }
 
-void Scheduler::setSchedule(Schedule s1, Schedule s2, uint8_t offDur, uint8_t stopHr, uint8_t stopMin) {
-    sched1 = s1;
-    sched2 = s2;
-    stopped = false;
-
-    if (boardID == 1) {
-        b1OffDur = (offDur > 0) ? offDur : PUMP_OFF_MIN;
-    }
-    if (boardID == 2) {
-        b2OffDur = (offDur > 0) ? offDur : PUMP_OFF_MIN;
-        b2StopHr  = stopHr;
-        b2StopMin = stopMin;
-    }
-
-    saveToNVM();
-}
-
 void Scheduler::setManual(uint8_t globalRelay, uint16_t durationMin) {
     manualTargetRelay = globalRelay;
     manualEndTime = millis() + (durationMin * 60000UL);
@@ -359,10 +317,6 @@ void Scheduler::loadFromNVM() {
     sched2.startHr  = schedPrefs.getUChar("h2", 0);
     sched2.startMin = schedPrefs.getUChar("m2", 0);
     sched2.duration = schedPrefs.getUChar("d2", 0);
-    b2StopHr        = schedPrefs.getUChar("sh", 0xFF);
-    b2StopMin       = schedPrefs.getUChar("sm", 0xFF);
-    b1OffDur        = schedPrefs.getUChar("o1", PUMP_OFF_MIN);
-    b2OffDur        = schedPrefs.getUChar("o2", PUMP_OFF_MIN);
     schedPrefs.end();
 }
 
@@ -374,9 +328,5 @@ void Scheduler::saveToNVM() {
     schedPrefs.putUChar("h2", sched2.startHr);
     schedPrefs.putUChar("m2", sched2.startMin);
     schedPrefs.putUChar("d2", sched2.duration);
-    schedPrefs.putUChar("sh", b2StopHr);
-    schedPrefs.putUChar("sm", b2StopMin);
-    schedPrefs.putUChar("o1", b1OffDur);
-    schedPrefs.putUChar("o2", b2OffDur);
     schedPrefs.end();
 }

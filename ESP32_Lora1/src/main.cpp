@@ -8,9 +8,6 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 
-// Wokwi simulation stubs (included when -D WOKWI is set)
-#include "wokwi_stubs.h"
-
 // ============================================================
 // MASTER INCLUDES
 // ============================================================
@@ -47,13 +44,10 @@ uint8_t myID = 0;
     uint8_t currentMode;
     uint32_t lastSeen;
     bool online;
-    bool solarWasOK;  // Track solar state for change detection
   } slaves[8];
 
   // Schedule ACK tracking
   bool scheduleAcked[8] = {false};
-  unsigned long scheduleBroadcastTime = 0;
-  bool scheduleRetrySent = false;  // Only retry once
 
   unsigned long lastLCDUpdate = 0;
   unsigned long lastTimeSync = 0;
@@ -95,7 +89,6 @@ unsigned long lastSchedulerRun = 0;
   void broadcastManual(uint8_t relayID, uint16_t durationMin);
   void broadcastTimeSync();
   void checkOfflineSlaves();
-  void telegramAlert(const char* msg);
   uint8_t relayToBoard(uint8_t globalRelay);
 
   // Load IotWebConf params from EEPROM to runtime globals
@@ -130,7 +123,6 @@ unsigned long lastSchedulerRun = 0;
     }
   }
 #else
-  #include "INA226_Sensor.h"
   void handleLoRaSlave();
   void sendHeartbeat();
 #endif
@@ -146,13 +138,6 @@ uint8_t relayToBoard(uint8_t globalRelay) {
     if (globalRelay >= 11 && globalRelay <= 14) return 6;
     if (globalRelay >= 15 && globalRelay <= 20) return 7;
     return 0;
-}
-
-// Telegram alert helper (checks mute + Internet + Bot_Group)
-void telegramAlert(const char* msg) {
-    if (!telegramMuted && Internet == 1 && strlen(Bot_Group) > 0) {
-        bot1.sendMessage(Bot_Group, msg, "");
-    }
 }
 
 // Send manual command: valve relay ON + B3 pump ON
@@ -180,10 +165,6 @@ void broadcastManual(uint8_t relayID, uint16_t durationMin) {
     p.activeRelay = 0; // B3 doesn't care which relay, just turns on
     LoraService::sendPacket(p);
     Serial.printf("[Manual] B3 pump ON, %d min\n", durationMin);
-
-    char alertMsg[64];
-    snprintf(alertMsg, sizeof(alertMsg), "🔧 Manual: Relay %d, %d min", relayID, durationMin);
-    telegramAlert(alertMsg);
 }
 
 #endif // BOARD_TYPE == 0
@@ -276,31 +257,10 @@ void loop() {
     lastLCDUpdate = millis();
   }
 
-  // Time sync + NTP→RTC every 60 minutes
+  // Time sync broadcast every 60 minutes
   if (millis() - lastTimeSync > 3600000) {
-    // NTP → RTC auto-sync (Master RTC)
-    timeClient.update();
-    if (timeClient.isTimeSet()) {
-      TimeManager::setEpoch(timeClient.getEpochTime());
-      Serial.printf("[NTP] RTC synced: %lu\n", timeClient.getEpochTime());
-    }
-    // Broadcast time to slaves
     broadcastTimeSync();
     lastTimeSync = millis();
-  }
-
-  // Schedule retry: re-broadcast to unacked slaves after 30s (once)
-  if (!scheduleRetrySent && scheduleBroadcastTime > 0 &&
-      millis() - scheduleBroadcastTime > 30000) {
-    bool anyMissed = false;
-    for (int i = 1; i <= 7; i++) {
-      if (!scheduleAcked[i]) { anyMissed = true; break; }
-    }
-    if (anyMissed) {
-      Serial.println("[LoRa] Retry broadcast (unacked slaves)");
-      broadcastSchedule();
-    }
-    scheduleRetrySent = true;  // Only retry once
   }
 
   // Offline check every 30s
@@ -327,56 +287,6 @@ void loop() {
     lastSchedulerRun = millis();
   }
 
-#ifdef WOKWI
-  // Serial command injection for Wokwi testing
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    
-    if (cmd.startsWith("sched")) {
-      // sched 09:00,50,14:00,5,off10,stopH,stopM
-      int h1, m1, d1, h2, m2, d2, off = 10, sh = 0, sm = 0;
-      int n = sscanf(cmd.c_str(), "sched %d:%d,%d,%d:%d,%d,%d,%d:%d",
-                     &h1, &m1, &d1, &h2, &m2, &d2, &off, &sh, &sm);
-      if (n >= 6) {
-        Schedule s1 = {(uint8_t)h1, (uint8_t)m1, (uint8_t)d1};
-        Schedule s2 = {(uint8_t)h2, (uint8_t)m2, (uint8_t)d2};
-        if (n < 7) off = 10;
-        if (n < 9) { sh = 0; sm = 0; }
-        Scheduler::setSchedule(s1, s2, (uint8_t)off, (uint8_t)sh, (uint8_t)sm);
-        Serial.printf("[WOKWI] Schedule set: R1 %02d:%02d/%d R2 %02d:%02d/%d off=%d stop=%02d:%02d\n",
-                      h1, m1, d1, h2, m2, d2, off, sh, sm);
-      }
-    }
-    else if (cmd.startsWith("manual")) {
-      int relay, dur;
-      if (sscanf(cmd.c_str(), "manual %d,%d", &relay, &dur) == 2) {
-        Scheduler::setManual((uint8_t)relay, (uint16_t)dur);
-        Serial.printf("[WOKWI] Manual: relay %d, %d min\n", relay, dur);
-      }
-    }
-    else if (cmd == "stop") {
-      Scheduler::stopAll();
-      Serial.println("[WOKWI] STOP ALL");
-    }
-    else if (cmd.startsWith("time")) {
-      // time 2026-06-07 09:00:00
-      int yr, mo, dy, hr, mi, se;
-      if (sscanf(cmd.c_str(), "time %d-%d-%d %d:%d:%d", &yr, &mo, &dy, &hr, &mi, &se) == 6) {
-        TimeManager::updateRTC(DateTime(yr, mo, dy, hr, mi, se));
-        Serial.printf("[WOKWI] Time set: %04d-%02d-%02d %02d:%02d:%02d\n", yr, mo, dy, hr, mi, se);
-      }
-    }
-    else if (cmd == "status") {
-      Serial.printf("[WOKWI] Board %d | Mode=%d | ActiveRelay=%d | Stopped=%d\n",
-                    myID, Scheduler::getCurrentMode(), Scheduler::getActiveRelay(),
-                    Scheduler::isStopped());
-      Serial.printf("  RTC: %s\n", TimeManager::getFormattedTime().c_str());
-      Serial.printf("  Relays: 0x%02X\n", HardwareService::getRelayStatus());
-    }
-  }
-#endif
-
 #endif
 }
 
@@ -399,30 +309,9 @@ void handleLoRaMaster() {
         slaves[sid].relayStatus = packet.relayStatus;
         slaves[sid].currentMode = packet.currentMode;
         slaves[sid].lastSeen = millis();
-        
-        // Online detection
         if (!slaves[sid].online) {
           slaves[sid].online = true;
-          slaves[sid].solarWasOK = (packet.battery & 0x01);
           Serial.printf("[LoRa] B%d online\n", sid);
-          char alertMsg[32];
-          snprintf(alertMsg, sizeof(alertMsg), "🟢 B%d Online", sid);
-          telegramAlert(alertMsg);
-        }
-
-        // Solar status change detection (B2=board2, B3=board3)
-        if (sid == 2 || sid == 3) {
-            bool solarNow = (packet.battery & 0x01) != 0;
-            if (slaves[sid].online && solarNow != slaves[sid].solarWasOK) {
-                char alertMsg[48];
-                if (!solarNow) {
-                    snprintf(alertMsg, sizeof(alertMsg), "🌑 B%d Solar Paused (night/cloud)", sid);
-                } else {
-                    snprintf(alertMsg, sizeof(alertMsg), "☀️ B%d Solar Resume (sun)", sid);
-                }
-                telegramAlert(alertMsg);
-            }
-            slaves[sid].solarWasOK = solarNow;
         }
 
         // Update Blynk relay LEDs per slave
@@ -472,92 +361,65 @@ void checkOfflineSlaves() {
       scheduleAcked[i] = false;
       Serial.printf("[LoRa] B%d offline (>30s)\n", i);
       BLYNK_WRITE_SAFE(loraOnlinePin[i], 0);
-      char alertMsg[32];
-      snprintf(alertMsg, sizeof(alertMsg), "🔴 B%d Offline", i);
-      telegramAlert(alertMsg);
     }
   }
 }
 
 // ============================================================
 // BROADCAST: Targeted schedule packets
-//   B1 (targetId=1): Blynk-configurable start/ON/OFF (V140-V143)
-//   B2 (targetId=2): Blynk start/ON/OFF + auto-stop R2-15min, solar-gated
-//   B3-B7 (targetId=255): Round 1 + Round 2 (V130-V133)
+//   B1: Hardcoded 09:00-17:00 (no broadcast needed)
+//   B2 (targetId=2): computed start, 50 ON / 10 OFF
+//   B3-B7 (targetId=255): Round 1 + Round 2
 // ============================================================
 void broadcastSchedule() {
-    // Reset ACK tracking + enable retry
-    for (int i = 1; i <= 7; i++) scheduleAcked[i] = false;
-    scheduleBroadcastTime = millis();
-    scheduleRetrySent = false;
+    // NOTE: B1 uses hardcoded schedule — no broadcast needed
 
-    // ---- B1: Independent pump schedule ----
+    // ---- B2: Computed start after Round 1 ends ----
+    // Round 1 total = 20 * dur1 - 19 minutes
+    // B2 start = next 15-min boundary after Round 1 ends
+    // B2 stop  = 13:50 (10 min before Round 2 at 14:00)
     {
+        // Access Blynk globals from 00_Blynk_App.h
+        extern uint8_t  blynkP1StartHr, blynkP1StartMin;
+        extern uint16_t blynkP1Dur;
+
+        uint16_t p1StartMins = blynkP1StartHr * 60 + blynkP1StartMin;
+        uint16_t round1Total = 20 * blynkP1Dur - 19;
+        uint16_t round1End   = p1StartMins + round1Total;
+
+        // Ceil to next 15-min boundary
+        uint16_t b2Start = ((round1End + 14) / 15) * 15;
+
+        // Reset ACK tracking
+        scheduleAcked[2] = false;
+
         LuckyPacket p;
         memset(&p, 0, sizeof(LuckyPacket));
         p.senderId   = 0;
-        p.targetId   = 1;
+        p.targetId   = 2;
         p.cmdType    = CMD_SET_SCHEDULE;
-        p.startHr1   = (blynkB1StartHr > 0) ? blynkB1StartHr : 9;
-        p.startMin1  = (blynkB1StartHr > 0 || blynkB1StartMin > 0) ? blynkB1StartMin : 0;
-        p.duration1  = (blynkB1OnDur  > 0) ? blynkB1OnDur  : 50;
-        p.startHr2   = (blynkB1OffDur > 0) ? blynkB1OffDur : 10;
+        p.startHr1   = b2Start / 60;
+        p.startMin1  = b2Start % 60;
+        p.duration1  = 50;   // ON minutes
+        p.startHr2   = PUMP_OFF_MIN; // 10 (OFF minutes)
 
         LoraService::sendPacket(p);
-        Serial.printf("[LoRa] B1 schedule: %02d:%02d, ON=%d OFF=%d\n",
-                      p.startHr1, p.startMin1, p.duration1, p.startHr2);
-    }
-
-    // ---- B2: Independent pump schedule with stop time ----
-    {
-        uint8_t b2StartHr  = (blynkB2StartHr > 0) ? blynkB2StartHr : 9;
-        uint8_t b2StartMin = (blynkB2StartHr > 0 || blynkB2StartMin > 0) ? blynkB2StartMin : 0;
-        uint16_t b2OnDur   = (blynkB2OnDur  > 0) ? blynkB2OnDur  : 50;
-        uint16_t b2OffDur  = (blynkB2OffDur > 0) ? blynkB2OffDur : 10;
-
-        // B2-B3 NEVER overlap: auto-adjust B2 start to AFTER R1 ends + 15 min
-        if (blynkP1Dur > 0) {
-            uint16_t r1EndMins = blynkP1StartHr * 60 + blynkP1StartMin + (20 * blynkP1Dur - 19);
-            uint16_t b2MinStart = b2StartHr * 60 + b2StartMin;
-            if (b2MinStart < r1EndMins + 15) {
-                // Push to next 15-min boundary after R1 + 15 min
-                uint16_t adjusted = (((r1EndMins + 15) + 14) / 15) * 15;
-                b2StartHr  = adjusted / 60;
-                b2StartMin = adjusted % 60;
-                Serial.printf("[LoRa] B2 auto-adjusted to %02d:%02d (after R1+15)\n", b2StartHr, b2StartMin);
-            }
-        }
-
-        // Compute B2 stop time = R2 start − 15 min
-        uint16_t r2StartMins = blynkP2StartHr * 60 + blynkP2StartMin;
-        int16_t b2StopMins = (int16_t)r2StartMins - 15;
-        if (b2StopMins < 0) b2StopMins = 0;
-        uint8_t stopHr  = b2StopMins / 60;
-        uint8_t stopMin = b2StopMins % 60;
-
-        LuckyPacket p;
-        memset(&p, 0, sizeof(LuckyPacket));
-        p.senderId    = 0;
-        p.targetId    = 2;
-        p.cmdType     = CMD_SET_SCHEDULE;
-        p.startHr1    = b2StartHr;
-        p.startMin1   = b2StartMin;
-        p.duration1   = b2OnDur;
-        p.startHr2    = b2OffDur;
-        p.reserved[0] = stopHr;
-        p.reserved[1] = stopMin;
-
-        LoraService::sendPacket(p);
-        Serial.printf("[LoRa] B2 schedule: %02d:%02d, ON=%d OFF=%d, stop %02d:%02d\n",
-                      b2StartHr, b2StartMin, b2OnDur, b2OffDur, stopHr, stopMin);
+        Serial.printf("[LoRa] B2 schedule: %02d:%02d (R1 ends %02d:%02d)\n",
+                      b2Start/60, b2Start%60, round1End/60, round1End%60);
     }
 
     // ---- B3-B7 Group: Round 1 + Round 2 ----
     {
+        extern uint8_t  blynkP1StartHr, blynkP1StartMin, blynkP2StartHr, blynkP2StartMin;
+        extern uint16_t blynkP1Dur, blynkP2Dur;
+
+        // Reset ACK tracking for B3-B7
+        for (int i = 3; i <= 7; i++) scheduleAcked[i] = false;
+
         LuckyPacket p;
         memset(&p, 0, sizeof(LuckyPacket));
         p.senderId   = 0;
-        p.targetId   = 255;
+        p.targetId   = 255;  // All B3-B7
         p.cmdType    = CMD_SET_SCHEDULE;
         p.startHr1   = blynkP1StartHr;
         p.startMin1  = blynkP1StartMin;
@@ -588,7 +450,7 @@ void broadcastTimeSync() {
     p.startHr2  = epoch & 0xFF;
 
     LoraService::sendPacket(p);
-    Serial.printf("[LoRa] Time sync: %lu\n", (unsigned long)epoch);
+    Serial.printf("[LoRa] Time sync: %u\n", epoch);
 }
 
 // Emergency stop broadcast
@@ -600,7 +462,6 @@ void broadcastStop() {
 
   if (LoraService::sendPacket(p)) {
     Serial.println("[LoRa] STOP ALL broadcast OK");
-    telegramAlert("⚠️ EMERGENCY STOP ACTIVATED");
   }
 }
 
@@ -632,15 +493,10 @@ void handleLoRaSlave() {
     case CMD_SET_SCHEDULE: {
       Schedule s1 = {packet.startHr1, packet.startMin1, packet.duration1};
       Schedule s2 = {packet.startHr2, packet.startMin2, packet.duration2};
-      
-      // B1/B2: packet.startHr2 = OFF duration (not a time)
-      uint8_t offDur = (myID == 1 || myID == 2) ? packet.startHr2 : 0;
-      
-      Scheduler::setSchedule(s1, s2, offDur, packet.reserved[0], packet.reserved[1]);
-      Serial.printf("[LoRa] Schedule: R1 %02d:%02d/%dmin, R2 %02d:%02d/%dmin, offDur=%d stop=%02d:%02d\n",
+      Scheduler::setSchedule(s1, s2);
+      Serial.printf("[LoRa] Schedule: R1 %02d:%02d/%dmin, R2 %02d:%02d/%dmin\n",
                     s1.startHr, s1.startMin, s1.duration,
-                    s2.startHr, s2.startMin, s2.duration,
-                    offDur, packet.reserved[0], packet.reserved[1]);
+                    s2.startHr, s2.startMin, s2.duration);
 
       // Send ACK back to Master
       LuckyPacket ack;
@@ -677,11 +533,6 @@ void sendHeartbeat() {
   packet.cmdType     = CMD_HEARTBEAT;
   packet.relayStatus = HardwareService::getRelayStatus();
   packet.currentMode = Scheduler::getCurrentMode();
-  // Pack solar/fan status into battery byte:
-  //   bit 0 = solarOK (1=sun, 0=night)
-  //   bit 1 = fanOn   (1=running, 0=off)
-  packet.battery = (INA226Sensor::isSolarOK() ? 0x01 : 0x00) |
-                   (INA226Sensor::isFanOn()   ? 0x02 : 0x00);
 
   LoraService::sendPacket(packet);
 }
